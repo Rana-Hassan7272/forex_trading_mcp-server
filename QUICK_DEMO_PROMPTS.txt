@@ -1,0 +1,63 @@
+QUICK DEMO PROMPTS (Copy-Paste Ready)
+=====================================
+
+SECTION 1: INTRODUCTION
+------------------------
+1. Hi, I'm a forex trader. Can you help me track my trades?
+
+
+SECTION 2: SAVE TRADES (Show Intelligent Collection)
+-----------------------------------------------------
+2. I just took a new trade. Entry price is 2000, lot size 0.01, my balance is 1000, and it's a BUY trade.
+
+3. Take profit is 2010, stop loss is 1990, timeframe is 1h, trade style is scalp, and strategy is SMC.
+
+
+SECTION 3: LOG RESULTS (Show Auto-Calculation)
+-----------------------------------------------
+4. I won this trade
+
+5. I took another trade. Entry 2650, lot 0.02, balance 1010, BUY, take profit 2660, stop loss 2645, timeframe 15m, day trade, strategy is trendline.
+
+6. I lost this trade
+
+
+SECTION 4: INSIGHTS (Show Analytics)
+-------------------------------------
+7. Show me my trading insights
+
+8. Which timeframe works best for me?
+
+9. What's my best strategy?
+
+10. How many trades did I take today?
+
+
+SECTION 5: RISK MONITORING
+---------------------------
+11. Check for any risk alerts
+
+
+SECTION 6: ADVANCED (Show Intelligence)
+----------------------------------------
+12. Compare my BUY vs SELL performance
+
+13. How many trades did I take this week?
+
+14. What was my first trade?
+
+
+SECTION 7: CLOSING
+------------------
+15. Give me a summary of my overall trading performance
+
+
+MINI DEMO (3 minutes - Essential Only)
+======================================
+1. Hi, I'm a forex trader
+2. I took a new trade: entry 2000, lot 0.01, balance 1000, BUY, TP 2010, SL 1990, timeframe 1h, scalp, SMC
+3. I won this trade
+4. Show me my trading insights
+5. Which timeframe works best for me?
+6. Check for risk alerts
+

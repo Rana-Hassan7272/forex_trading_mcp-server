@@ -146,7 +146,7 @@ export async function logTradeResult(tradeId, result, notes = null, userId) {
 export async function getTradeInsights(filters = {}, userId) {
   const result = await callTool('get_trade_insights', {
     user_id: userId,
-    ...filters
+    ...filters                    
   });
   // Result is already parsed by mcpRequest, return as-is
   return result;
