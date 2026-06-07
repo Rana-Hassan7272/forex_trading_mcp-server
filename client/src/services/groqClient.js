@@ -162,7 +162,6 @@ const TOOLS_DEFINITIONS = [
       }
     }
   }
-  }
 ];
 
 const GEMINI_TYPE_MAP = {
