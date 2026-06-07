@@ -1,27 +1,89 @@
-/**
- * Groq LLM Client Service
- * Handles communication with Groq API for intelligent tool calling
- */
-
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import Groq from 'groq-sdk';
 import { saveTrade, logTradeResult, getTradeInsights, checkRiskAlerts } from './mcpClient';
 
+const GOOGLE_API_KEY = import.meta.env.VITE_GOOGLE_API_KEY;
+const GOOGLE_GEMINI_MODEL = import.meta.env.VITE_GOOGLE_GEMINI_MODEL || 'gemini-3.1-flash-lite';
 const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
+const GROQ_MODEL = 'llama-3.1-8b-instant';
 
-if (!GROQ_API_KEY) {
-  console.warn('VITE_GROQ_API_KEY not found in environment variables');
-}
-
-// Note: dangerouslyAllowBrowser is set to true for client-side usage
-// In production, consider using a backend proxy to protect your API key
-const groq = GROQ_API_KEY ? new Groq({ 
+const groq = GROQ_API_KEY ? new Groq({
   apiKey: GROQ_API_KEY,
-  dangerouslyAllowBrowser: true 
+  dangerouslyAllowBrowser: true
 }) : null;
 
-/**
- * Tool definitions for Groq function calling
- */
+const SYSTEM_PROMPT = `You are a friendly and helpful Forex Trading Assistant. Your personality is conversational, professional, and supportive.
+
+CRITICAL RULE: NEVER use the word "(optional)" when asking for trade details. All fields should be presented equally without labels.
+
+MEMORY & CONTEXT:
+- You have access to the FULL conversation history - ALL previous messages are available to you
+- Every trade saved includes a timestamp (date and time)
+- You can answer questions about past trades, dates, and time periods
+- When user asks "how many trades yesterday?", "what trades did I take today?", "last week's performance", etc., you should call get_trade_insights tool
+- Remember ALL previous conversations - if user saved trades 2 days ago, you should remember them
+
+CONVERSATION FLOW:
+
+1. GREETING: When user says "hi", "hello", or starts chatting, introduce yourself:
+   "Hello! I'm your Forex Trading Assistant. I help you track your trades, analyze performance, and manage risk. How can I assist you today?"
+
+2. SAVING A NEW TRADE:
+   - When user says "i take new trade", "save trade", "new trade", "i took a trade", or provides trade details → Extract ALL details carefully
+   - CRITICAL: When user provides trade details in their message, you MUST extract EXACT values from their message:
+     * If user says "entry 2650" → extract entry_price: 2650 (NOT 2200 or any other number)
+     * If user says "lot 0.02" → extract lot_size: 0.02 (NOT 0.01 or any other value)
+     * If user says "balance 1010" → extract balance: 1010 (NOT 990 or any other value)
+     * If user says "take profit 2660" → extract take_profit: 2660 (NOT any other value)
+     * If user says "stop loss 2645" → extract stop_loss: 2645 (NOT any other value)
+     * If user says "timeframe 15m" → extract timeframe: "15m" (NOT any other timeframe)
+     * If user says "day trade" → extract trade_style: "day trade" (NOT "scalp" or "swing")
+     * If user says "strategy is trendline" → extract strategy: "trendline" (NOT any other strategy)
+   - REQUIRED fields: entry_price, lot_size, balance, trade_type
+   - IMPORTANT fields (should be provided): take_profit, stop_loss
+   - ALSO NEEDED fields: timeframe, trade_style, strategy
+   - If user provides ALL details in one message (e.g., "entry 2650, lot 0.02, balance 1010, BUY, take profit 2660, stop loss 2645, timeframe 15m, day trade, strategy trendline"), extract ALL values and call save_trade immediately
+   - If user provides some details but misses REQUIRED ones, ask for ONLY the missing required fields one by one
+   - If user provides all REQUIRED fields but misses IMPORTANT ones (take_profit, stop_loss), ask: "I need your take profit and stop loss prices to complete the trade setup."
+   - If user provides all REQUIRED and IMPORTANT fields but misses ALSO NEEDED ones (trade_style, strategy, timeframe), ask: "I have all the essential details. Please provide your trade style (swing, day trade, or scalp), strategy, and timeframe to complete the trade information."
+   - CRITICAL: DO NOT call save_trade tool if trade_style, strategy, or timeframe are missing. Ask for them first.
+   - CRITICAL: When extracting values, use EXACT numbers from user's message. Do NOT use approximate values or values from previous trades.
+   - Only call save_trade tool when you have collected ALL details including trade_style, strategy, and timeframe
+   - After saving successfully, ALWAYS ask: "Trade saved! Was this trade a WIN or LOSS?"
+
+3. LOGGING TRADE RESULT:
+   - When user says "win", "loss", "it was a win", "it was a loss", or answers your question about trade outcome
+   - Extract trade_id from context (the most recently saved trade)
+   - Call log_trade_result tool
+   - Show the result naturally: "Trade logged as [WIN/LOSS]. Profit/Loss: $X. New balance: $Y"
+
+4. GETTING INSIGHTS:
+   - When user asks "insights", "show me insights", "how am I doing", "my performance", "statistics", "analytics"
+   - When user asks about specific time periods: "how many trades yesterday?", "today's trades", "last week", "this month", "how many wins today?", etc.
+   - Call get_trade_insights tool
+   - Display the results in a natural, conversational way with explanations
+   - If user asks about a specific date/time period, mention it in your response (e.g., "Based on your trades today...", "Looking at yesterday's trades...")
+
+5. RISK ALERTS & SUGGESTIONS:
+   - When user asks "suggestions", "future plan", "what should I do", "advice", "recommendations", "alerts"
+   - Call check_risk_alerts tool
+   - Display alerts in a natural way with actionable advice
+
+6. NON-TRADING QUERIES:
+   - Politely redirect: "I'm your Forex Trading Assistant focused on trading. I can help you save trades, log results, get insights, or check risk alerts. How can I help with your trading today?"
+
+IMPORTANT RULES:
+- Be conversational and friendly, not robotic
+- Ask for one thing at a time when collecting trade details
+- After saving a trade, ALWAYS ask about the outcome (WIN/LOSS)
+- Display tool results in natural language, not raw data
+- Remember context - if user just saved trade #5, and says "it was a loss", they mean trade #5
+- Remember ALL previous conversations - you have full chat history available
+- When user asks about dates/times, use get_trade_insights to get the relevant data
+- CRITICAL: If user already provided information (e.g., "trade style swing trade"), do NOT ask for it again. Use the information they provided.
+- CRITICAL: Check the conversation history before asking for details - if user already said "timeframe 1h" in a previous message, use that value, don't ask again.
+- CRITICAL: When user provides information in a follow-up message (e.g., "trade style swing trade"), combine it with previously mentioned details and save the trade immediately if all required fields are now present.`;
+
 const TOOLS_DEFINITIONS = [
   {
     type: 'function',
@@ -100,197 +162,224 @@ const TOOLS_DEFINITIONS = [
       }
     }
   }
+  }
 ];
 
-/**
- * Process user message with Groq LLM and execute tool calls
- */
-export async function processUserMessage(userMessage, conversationHistory = [], userId = null) {
-  if (!groq) {
-    throw new Error('Groq API key not configured. Please set VITE_GROQ_API_KEY in your .env file.');
+const GEMINI_TYPE_MAP = {
+  string: 'STRING',
+  number: 'NUMBER',
+  integer: 'INTEGER',
+  boolean: 'BOOLEAN',
+  object: 'OBJECT',
+  array: 'ARRAY'
+};
+
+function convertSchemaToGemini(schema) {
+  if (!schema?.properties) {
+    return { type: 'OBJECT', properties: {} };
+  }
+  const properties = {};
+  for (const [key, val] of Object.entries(schema.properties)) {
+    properties[key] = {
+      type: GEMINI_TYPE_MAP[val.type] || 'STRING',
+      description: val.description || ''
+    };
+    if (val.enum) properties[key].enum = val.enum;
+  }
+  return {
+    type: 'OBJECT',
+    properties,
+    required: schema.required || []
+  };
+}
+
+const GEMINI_TOOLS = TOOLS_DEFINITIONS.map((tool) => ({
+  name: tool.function.name,
+  description: tool.function.description,
+  parameters: convertSchemaToGemini(tool.function.parameters)
+}));
+
+function buildMessages(conversationHistory, userMessage) {
+  return [
+    { role: 'system', content: SYSTEM_PROMPT },
+    ...conversationHistory,
+    { role: 'user', content: userMessage }
+  ];
+}
+
+function normalizeLLMMessage(message) {
+  return {
+    content: message?.content || null,
+    tool_calls: message?.tool_calls || null
+  };
+}
+
+async function callGemini(messages) {
+  const genAI = new GoogleGenerativeAI(GOOGLE_API_KEY);
+  const chatMessages = messages.filter((m) => m.role !== 'system');
+  const model = genAI.getGenerativeModel({
+    model: GOOGLE_GEMINI_MODEL,
+    systemInstruction: SYSTEM_PROMPT,
+    tools: [{ functionDeclarations: GEMINI_TOOLS }]
+  });
+
+  const history = [];
+  for (let i = 0; i < chatMessages.length - 1; i++) {
+    const msg = chatMessages[i];
+    history.push({
+      role: msg.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: msg.content }]
+    });
   }
 
-  // Build conversation messages
-  const messages = [
-    {
-      role: 'system',
-      content: `You are a friendly and helpful Forex Trading Assistant. Your personality is conversational, professional, and supportive.
+  const lastMessage = chatMessages[chatMessages.length - 1];
+  const chat = model.startChat({ history });
+  const result = await chat.sendMessage(lastMessage.content);
+  const response = result.response;
+  const functionCalls = response.functionCalls?.() || [];
 
-CRITICAL RULE: NEVER use the word "(optional)" when asking for trade details. All fields should be presented equally without labels.
-
-MEMORY & CONTEXT:
-- You have access to the FULL conversation history - ALL previous messages are available to you
-- Every trade saved includes a timestamp (date and time)
-- You can answer questions about past trades, dates, and time periods
-- When user asks "how many trades yesterday?", "what trades did I take today?", "last week's performance", etc., you should call get_trade_insights tool
-- Remember ALL previous conversations - if user saved trades 2 days ago, you should remember them
-
-CONVERSATION FLOW:
-
-1. GREETING: When user says "hi", "hello", or starts chatting, introduce yourself:
-   "Hello! I'm your Forex Trading Assistant. I help you track your trades, analyze performance, and manage risk. How can I assist you today?"
-
-2. SAVING A NEW TRADE:
-   - When user says "i take new trade", "save trade", "new trade", "i took a trade", or provides trade details → Extract ALL details carefully
-   - CRITICAL: When user provides trade details in their message, you MUST extract EXACT values from their message:
-     * If user says "entry 2650" → extract entry_price: 2650 (NOT 2200 or any other number)
-     * If user says "lot 0.02" → extract lot_size: 0.02 (NOT 0.01 or any other value)
-     * If user says "balance 1010" → extract balance: 1010 (NOT 990 or any other value)
-     * If user says "take profit 2660" → extract take_profit: 2660 (NOT any other value)
-     * If user says "stop loss 2645" → extract stop_loss: 2645 (NOT any other value)
-     * If user says "timeframe 15m" → extract timeframe: "15m" (NOT any other timeframe)
-     * If user says "day trade" → extract trade_style: "day trade" (NOT "scalp" or "swing")
-     * If user says "strategy is trendline" → extract strategy: "trendline" (NOT any other strategy)
-   - REQUIRED fields: entry_price, lot_size, balance, trade_type
-   - IMPORTANT fields (should be provided): take_profit, stop_loss
-   - ALSO NEEDED fields: timeframe, trade_style, strategy
-   - If user provides ALL details in one message (e.g., "entry 2650, lot 0.02, balance 1010, BUY, take profit 2660, stop loss 2645, timeframe 15m, day trade, strategy trendline"), extract ALL values and call save_trade immediately
-   - If user provides some details but misses REQUIRED ones, ask for ONLY the missing required fields one by one
-   - If user provides all REQUIRED fields but misses IMPORTANT ones (take_profit, stop_loss), ask: "I need your take profit and stop loss prices to complete the trade setup."
-   - If user provides all REQUIRED and IMPORTANT fields but misses ALSO NEEDED ones (trade_style, strategy, timeframe), ask: "I have all the essential details. Please provide your trade style (swing, day trade, or scalp), strategy, and timeframe to complete the trade information."
-   - CRITICAL: DO NOT call save_trade tool if trade_style, strategy, or timeframe are missing. Ask for them first.
-   - CRITICAL: When extracting values, use EXACT numbers from user's message. Do NOT use approximate values or values from previous trades.
-   - Only call save_trade tool when you have collected ALL details including trade_style, strategy, and timeframe
-   - After saving successfully, ALWAYS ask: "Trade saved! Was this trade a WIN or LOSS?"
-
-3. LOGGING TRADE RESULT:
-   - When user says "win", "loss", "it was a win", "it was a loss", or answers your question about trade outcome
-   - Extract trade_id from context (the most recently saved trade)
-   - Call log_trade_result tool
-   - Show the result naturally: "Trade logged as [WIN/LOSS]. Profit/Loss: $X. New balance: $Y"
-
-4. GETTING INSIGHTS:
-   - When user asks "insights", "show me insights", "how am I doing", "my performance", "statistics", "analytics"
-   - When user asks about specific time periods: "how many trades yesterday?", "today's trades", "last week", "this month", "how many wins today?", etc.
-   - Call get_trade_insights tool
-   - Display the results in a natural, conversational way with explanations
-   - If user asks about a specific date/time period, mention it in your response (e.g., "Based on your trades today...", "Looking at yesterday's trades...")
-
-5. RISK ALERTS & SUGGESTIONS:
-   - When user asks "suggestions", "future plan", "what should I do", "advice", "recommendations", "alerts"
-   - Call check_risk_alerts tool
-   - Display alerts in a natural way with actionable advice
-
-6. NON-TRADING QUERIES:
-   - Politely redirect: "I'm your Forex Trading Assistant focused on trading. I can help you save trades, log results, get insights, or check risk alerts. How can I help with your trading today?"
-
-IMPORTANT RULES:
-- Be conversational and friendly, not robotic
-- Ask for one thing at a time when collecting trade details
-- After saving a trade, ALWAYS ask about the outcome (WIN/LOSS)
-- Display tool results in natural language, not raw data
-- Remember context - if user just saved trade #5, and says "it was a loss", they mean trade #5
-- Remember ALL previous conversations - you have full chat history available
-- When user asks about dates/times, use get_trade_insights to get the relevant data
-- CRITICAL: If user already provided information (e.g., "trade style swing trade"), do NOT ask for it again. Use the information they provided.
-- CRITICAL: Check the conversation history before asking for details - if user already said "timeframe 1h" in a previous message, use that value, don't ask again.
-- CRITICAL: When user provides information in a follow-up message (e.g., "trade style swing trade"), combine it with previously mentioned details and save the trade immediately if all required fields are now present.`
-    },
-    ...conversationHistory,
-    {
-      role: 'user',
-      content: userMessage
-    }
-  ];
-
-  // Helper function to make Groq API call with automatic retry on rate limit
-  const makeGroqCall = async (retryCount = 0) => {
-    try {
-      return await groq.chat.completions.create({
-        model: 'llama-3.1-8b-instant', // Currently supported model with function calling
-        messages: messages,
-        tools: TOOLS_DEFINITIONS,
-        tool_choice: 'auto', // Let LLM decide when to call tools
-        temperature: 0.3, // Lower temperature for more consistent function calling
-        max_tokens: 2048
-      });
-    } catch (groqError) {
-      // Handle Groq API errors, especially function calling errors
-      const errorCode = groqError?.error?.code || groqError?.code;
-      const errorMessage = groqError?.error?.message || groqError?.message || '';
-      
-      // Handle rate limiting with automatic retry
-      if (errorCode === 'rate_limit_exceeded' || errorMessage.includes('Rate limit') || errorMessage.includes('rate_limit')) {
-        // Extract wait time from error message (e.g., "try again in 10.5s" or "11.42s")
-        const waitTimeMatch = errorMessage.match(/try again in ([\d.]+)s/i) || errorMessage.match(/([\d.]+)s/i);
-        const waitTimeSeconds = waitTimeMatch ? parseFloat(waitTimeMatch[1]) : 10;
-        
-        // Wait silently in the background (user sees loading indicator)
-        await new Promise(resolve => setTimeout(resolve, (waitTimeSeconds + 1) * 1000)); // +1 second buffer
-        
-        // Retry the request automatically (max 3 retries to prevent infinite loops)
-        if (retryCount < 3) {
-          console.log(`Rate limit hit, waiting ${waitTimeSeconds}s and retrying... (attempt ${retryCount + 1})`);
-          return makeGroqCall(retryCount + 1);
-        } else {
-          // If still failing after retries, return error message
-          return Promise.reject(new Error(`Rate limit exceeded. Please try again later or upgrade your Groq plan.`));
+  if (functionCalls.length > 0) {
+    const fc = functionCalls[0];
+    return normalizeLLMMessage({
+      content: null,
+      tool_calls: [{
+        function: {
+          name: fc.name,
+          arguments: JSON.stringify(fc.args || {})
         }
+      }]
+    });
+  }
+
+  return normalizeLLMMessage({
+    content: response.text(),
+    tool_calls: null
+  });
+}
+
+async function callGroq(messages, retryCount = 0) {
+  const response = await groq.chat.completions.create({
+    model: GROQ_MODEL,
+    messages,
+    tools: TOOLS_DEFINITIONS,
+    tool_choice: 'auto',
+    temperature: 0.3,
+    max_tokens: 2048
+  });
+  return normalizeLLMMessage(response.choices[0].message);
+}
+
+async function callGroqWithRetry(messages) {
+  try {
+    return await callGroq(messages);
+  } catch (groqError) {
+    const errorCode = groqError?.error?.code || groqError?.code;
+    const errorMessage = groqError?.error?.message || groqError?.message || '';
+
+    if (errorCode === 'rate_limit_exceeded' || errorMessage.includes('Rate limit') || errorMessage.includes('rate_limit')) {
+      const waitTimeMatch = errorMessage.match(/try again in ([\d.]+)s/i) || errorMessage.match(/([\d.]+)s/i);
+      const waitTimeSeconds = waitTimeMatch ? parseFloat(waitTimeMatch[1]) : 10;
+
+      if (retryCount < 3) {
+        await new Promise((resolve) => setTimeout(resolve, (waitTimeSeconds + 1) * 1000));
+        return callGroqWithRetry(messages, retryCount + 1);
       }
-      
-      // Re-throw other errors to be handled below
-      throw groqError;
+      throw new Error('Rate limit exceeded on Groq fallback. Please try again later.');
     }
-  };
+
+    throw groqError;
+  }
+}
+
+async function callGroqTextOnly(userMessage, conversationHistory) {
+  const response = await groq.chat.completions.create({
+    model: GROQ_MODEL,
+    messages: [
+      {
+        role: 'system',
+        content: 'You are a helpful Forex Trading Assistant. If the user asks about trades, insights, or wants to save/log trades, acknowledge their request but explain that you need to use specific tools. For non-trading questions, respond naturally.'
+      },
+      ...conversationHistory,
+      { role: 'user', content: userMessage }
+    ],
+    temperature: 0.7,
+    max_tokens: 512
+  });
+  return response.choices[0].message.content;
+}
+
+async function makeLLMCall(messages, userMessage, conversationHistory) {
+  if (GOOGLE_API_KEY) {
+    try {
+      const message = await callGemini(messages);
+      console.log('LLM provider: Google Gemini', GOOGLE_GEMINI_MODEL);
+      return { message, provider: 'google' };
+    } catch (geminiError) {
+      console.warn('Gemini failed, falling back to Groq:', geminiError?.message || geminiError);
+    }
+  }
+
+  if (!groq) {
+    throw new Error('No LLM available. Set VITE_GOOGLE_API_KEY and/or VITE_GROQ_API_KEY in client/.env');
+  }
 
   try {
-    // Call Groq with function calling enabled (with automatic retry on rate limit)
-    let response;
-    try {
-      response = await makeGroqCall();
-    } catch (groqError) {
-      // Handle other Groq API errors (non-rate-limit)
-      const errorCode = groqError?.error?.code || groqError?.code;
-      const errorMessage = groqError?.error?.message || groqError?.message || '';
-      
-      // Handle function calling errors
-      if (errorCode === 'tool_use_failed' || errorMessage.includes('Failed to call a function')) {
-        // If function calling failed, try to understand user intent without tools
-        const userIntent = userMessage.toLowerCase();
-        
-        // Check if it's a trading-related query
-        if (userIntent.includes('timeframe') || userIntent.includes('strategy') || 
-            userIntent.includes('win rate') || userIntent.includes('insight') ||
-            userIntent.includes('trade') || userIntent.includes('save') ||
-            userIntent.includes('log') || userIntent.includes('risk')) {
-          // Retry without function calling, let LLM respond naturally
-          try {
-            const fallbackResponse = await groq.chat.completions.create({
-              model: 'llama-3.1-8b-instant',
-              messages: [
-                {
-                  role: 'system',
-                  content: 'You are a helpful Forex Trading Assistant. If the user asks about trades, insights, or wants to save/log trades, acknowledge their request but explain that you need to use specific tools. For non-trading questions, respond naturally.'
-                },
-                ...conversationHistory,
-                { role: 'user', content: userMessage }
-              ],
-              temperature: 0.7,
-              max_tokens: 512
-            });
-            return fallbackResponse.choices[0].message.content;
-          } catch (fallbackError) {
-            return `I understand you want to ${userIntent.includes('save') ? 'save a trade' : userIntent.includes('log') ? 'log a trade result' : 'get insights'}. Please use the form buttons at the top, or try rephrasing your request with all details.`;
-          }
-        } else {
-          // Non-trading query, respond naturally
-          return "I'm your Forex Trading Assistant focused on trading. I can help you save trades, log results, get insights, and check risk alerts. How can I help with your trading today?";
+    const message = await callGroqWithRetry(messages);
+    console.log('LLM provider: Groq (fallback)', GROQ_MODEL);
+    return { message, provider: 'groq' };
+  } catch (groqError) {
+    const errorCode = groqError?.error?.code || groqError?.code;
+    const errorMessage = groqError?.error?.message || groqError?.message || '';
+
+    if (errorCode === 'tool_use_failed' || errorMessage.includes('Failed to call a function')) {
+      const userIntent = userMessage.toLowerCase();
+      if (userIntent.includes('timeframe') || userIntent.includes('strategy') ||
+          userIntent.includes('win rate') || userIntent.includes('insight') ||
+          userIntent.includes('trade') || userIntent.includes('save') ||
+          userIntent.includes('log') || userIntent.includes('risk')) {
+        try {
+          const text = await callGroqTextOnly(userMessage, conversationHistory);
+          return { message: { content: text, tool_calls: null }, provider: 'groq' };
+        } catch {
+          return {
+            message: {
+              content: `I understand you want to ${userIntent.includes('save') ? 'save a trade' : userIntent.includes('log') ? 'log a trade result' : 'get insights'}. Please use the form buttons at the top, or try rephrasing your request with all details.`,
+              tool_calls: null
+            },
+            provider: 'groq'
+          };
         }
       }
-      
-      // Generic error handling
-      console.error('Groq API error:', groqError);
-      throw new Error(errorMessage || 'Failed to process message. Please try again.');
+      return {
+        message: {
+          content: "I'm your Forex Trading Assistant focused on trading. I can help you save trades, log results, get insights, and check risk alerts. How can I help with your trading today?",
+          tool_calls: null
+        },
+        provider: 'groq'
+      };
     }
 
-    const message = response.choices[0].message;
+    throw new Error(errorMessage || 'Failed to process message. Please try again.');
+  }
+}
 
-    // If no tool calls and there's content, return it (LLM responded directly)
+/**
+ * Process user message with LLM (Google Gemini primary, Groq fallback) and execute tool calls
+ */
+export async function processUserMessage(userMessage, conversationHistory = [], userId = null) {
+  if (!GOOGLE_API_KEY && !GROQ_API_KEY) {
+    throw new Error('No LLM configured. Set VITE_GOOGLE_API_KEY and/or VITE_GROQ_API_KEY in client/.env');
+  }
+
+  const messages = buildMessages(conversationHistory, userMessage);
+
+  try {
+    const { message } = await makeLLMCall(messages, userMessage, conversationHistory);
+
     if (!message.tool_calls && message.content) {
       return message.content;
     }
 
-    // Check if LLM wants to call a tool
     if (message.tool_calls && message.tool_calls.length > 0) {
       // Execute tool calls
       const toolCall = message.tool_calls[0];
@@ -634,11 +723,10 @@ IMPORTANT RULES:
       }
     }
 
-    // If no tool call, return the LLM's text response
     return message.content || 'I understand, but I need more information to help you. Try asking me to save a trade, log a result, get insights, or check risk alerts.';
 
   } catch (error) {
-    console.error('Groq API error:', error);
+    console.error('LLM error:', error);
     throw new Error(`Failed to process message: ${error.message}`);
   }
 }

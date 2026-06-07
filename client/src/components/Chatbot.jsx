@@ -79,7 +79,6 @@ function Chatbot({ userId }) {
         content: msg.content
       }))
 
-      // Process message with Groq LLM
       const response = await processUserMessage(userMessage, conversationHistory, userId)
       
       // Add assistant response
@@ -89,7 +88,7 @@ function Chatbot({ userId }) {
       setMessages(prev => [...prev, { 
         role: 'assistant', 
         content: `❌ Sorry, I encountered an error: ${error.message}\n\n` +
-                 `Make sure your Groq API key is set in the .env file (VITE_GROQ_API_KEY).`
+                 `Set VITE_GOOGLE_API_KEY (primary) and/or VITE_GROQ_API_KEY (fallback) in client/.env`
       }])
     } finally {
       setLoading(false)
