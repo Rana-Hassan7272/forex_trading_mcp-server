@@ -2,13 +2,28 @@
 
 An end-to-end Forex trading companion that combines a **FastMCP backend**, **React web app**, and **dual-LLM chat** (Google Gemini primary, Groq fallback) so traders can log trades in natural language, get performance analytics, and receive risk warnings — all from one chat interface.
 
-## Full Demo
+## Live App
 
-Watch the complete working app (localhost, full chat flow, live tool calls):
+**Use the app:** [https://forex-trading-mcp-server.vercel.app/](https://forex-trading-mcp-server.vercel.app/)
+
+Register, log in, chat to save trades, view dashboard analytics, and check risk alerts — fully deployed and working.
+
+## Full Demo Video
+
+Walkthrough recording (localhost, full chat flow, live tool calls):
 
 **[Full App Demo — AI-Powered Forex Assistant](https://tinyurl.com/ai-powered-forex-assistant)**
 
-The demo shows login, conversational trade logging, automatic P/L calculation, insights, and risk alerts running end-to-end.
+---
+
+## Live Deployment
+
+| Part | Where it runs | URL |
+|------|---------------|-----|
+| **Frontend** (React app) | [Vercel](https://vercel.com) | [https://forex-trading-mcp-server.vercel.app/](https://forex-trading-mcp-server.vercel.app/) |
+| **Backend** (FastMCP API + SQLite) | [FastMCP Cloud](https://fastmcp.cloud) | [https://forex-trade-assistant.fastmcp.app/mcp](https://forex-trade-assistant.fastmcp.app/mcp) |
+
+The frontend on Vercel calls the backend on FastMCP Cloud. The backend URL ends with `/mcp` — that is the API endpoint, not a web page. LLM calls (Gemini/Groq) run in the browser from Vercel env vars.
 
 ---
 
@@ -296,9 +311,11 @@ Example: Entry 2000, TP 2010, Lot 0.03 → `(10) × (0.03 × 100) = $30`
 
 ## Deployment
 
-**Backend (FastMCP Cloud):** Push to GitHub, connect repo — live at `https://forex-trade-assistant.fastmcp.app/mcp`
+**Frontend (Vercel):** Live at [https://forex-trading-mcp-server.vercel.app/](https://forex-trading-mcp-server.vercel.app/) — auto-deploys from GitHub `client/` folder.
 
-**Frontend:** `cd client && npm run build` → deploy `dist/` to Vercel, Netlify, or any static host. Set these env vars on the host:
+**Backend (FastMCP Cloud):** Live at [https://forex-trade-assistant.fastmcp.app/mcp](https://forex-trade-assistant.fastmcp.app/mcp) — push `server/` code to GitHub; FastMCP Cloud redeploys the Python MCP server.
+
+**Frontend env vars on Vercel:**
 
 ```
 VITE_MCP_SERVER_URL=https://forex-trade-assistant.fastmcp.app/mcp
@@ -307,14 +324,6 @@ VITE_GOOGLE_GEMINI_MODEL=gemini-3.1-flash-lite
 VITE_GROQ_API_KEY=your_groq_api_key
 ```
 
----
-
-## Security Notes
-
-- Passwords: SHA-256 with per-user salt (see `server/main.py`)
-- API keys: environment variables only — never commit `.env`
-- Google and Groq keys run in the browser; use a backend proxy in production to protect keys
-- All MCP queries filter by authenticated `user_id`
 
 ---
 
@@ -333,8 +342,9 @@ VITE_GROQ_API_KEY=your_groq_api_key
 
 ## Links
 
-- **Full Demo:** [https://tinyurl.com/ai-powered-forex-assistant](https://tinyurl.com/ai-powered-forex-assistant)
-- **Live MCP Server:** [https://forex-trade-assistant.fastmcp.app/mcp](https://forex-trade-assistant.fastmcp.app/mcp)
+- **Live App:** [https://forex-trading-mcp-server.vercel.app/](https://forex-trading-mcp-server.vercel.app/)
+- **Live Backend (MCP API):** [https://forex-trade-assistant.fastmcp.app/mcp](https://forex-trade-assistant.fastmcp.app/mcp)
+- **Demo Video:** [https://tinyurl.com/ai-powered-forex-assistant](https://tinyurl.com/ai-powered-forex-assistant)
 - **FastMCP Docs:** [https://gofastmcp.com](https://gofastmcp.com)
 - **Google AI Studio:** [https://aistudio.google.com/apikey](https://aistudio.google.com/apikey)
 - **Groq Console:** [https://console.groq.com](https://console.groq.com)
