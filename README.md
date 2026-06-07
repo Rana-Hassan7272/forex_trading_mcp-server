@@ -1,39 +1,145 @@
-# Forex Trading Assistant
+# AI-Powered Forex Trading Assistant
 
-A comprehensive Forex trading assistant application that helps traders track trades, analyze performance, and manage risk using AI-powered insights.
+An end-to-end Forex trading companion that combines a **FastMCP backend**, **React web app**, and **Groq LLM function calling** so traders can log trades in natural language, get performance analytics, and receive risk warnings — all from one chat interface.
 
-## 🌟 Overview
+## Full Demo
 
-This project consists of:
-- **FastMCP Server**: Backend API providing trading tools (save trades, log results, get insights, check risk alerts)
-- **React Frontend**: Web application with chatbot interface, trade forms, dashboard, and risk alerts
-- **Groq LLM Integration**: Natural language processing for conversational trade management
+Watch the complete working app (localhost, full chat flow, live tool calls):
 
-### What It Does
+**[Full App Demo — AI-Powered Forex Assistant](https://tinyurl.com/ai-powered-forex-assistant)**
 
-- ✅ **Save Trades**: Record trade entries with entry price, take profit, stop loss, lot size, timeframe, strategy, etc.
-- ✅ **Log Results**: Automatically calculate profit/loss when logging WIN/LOSS outcomes
-- ✅ **Get Insights**: Comprehensive analytics including win rate, best timeframes, best strategies, risk:reward analysis
-- ✅ **Risk Alerts**: Monitor trading patterns for consecutive losses, revenge trading, overtrading, drawdown, etc.
-- ✅ **User Authentication**: Secure login/registration with password hashing
-- ✅ **Chatbot Interface**: Natural language interaction using Groq LLM
-- ✅ **Persistent Storage**: SQLite database for all trading data
+The demo shows login, conversational trade logging, automatic P/L calculation, insights, and risk alerts running end-to-end.
 
 ---
 
-## 🚀 FastMCP Server
+## What This Project Does
 
-### Production Server URL
+Most trading journals are forms and spreadsheets. This app lets you **talk to your journal**:
 
-**Live Server**: `https://forex-trade-assistant.fastmcp.app/mcp`
+- *"I took a BUY on XAU/USD, entry 2650, TP 2660, SL 2645, lot 0.02, balance 1010, 15m scalp, trendline strategy"* → trade saved with risk:reward and potential P/L
+- *"It was a win"* → P/L and new balance calculated automatically
+- *"How am I doing?"* → win rate, best timeframe, best strategy, buy vs sell stats
+- *"Any risk alerts?"* → 10 pattern detectors flag revenge trading, overtrading, drawdown, and more
 
-This is a publicly accessible MCP server that anyone can use to interact with the trading tools.
+You can use the **Chat tab** for natural language, or the **Save Trade**, **Dashboard**, and **Risk Alerts** tabs for direct UI access. Both paths hit the same MCP server and SQLite database.
 
-### How to Use the FastMCP Server
+---
 
-#### Option 1: Direct HTTP Requests (JSON-RPC 2.0)
+## Highlights (Built in Code)
 
-You can call the server directly using HTTP POST requests:
+| Area | What was implemented |
+|------|----------------------|
+| **MCP Server** | 6 tools deployed at `https://forex-trade-assistant.fastmcp.app/mcp` — auth, trade CRUD, analytics, risk |
+| **LLM Layer** | Groq `llama-3.1-8b-instant` with function calling; validates fields, injects `user_id`, retries on rate limits |
+| **P/L Engine** | XAU/USD formula: `P/L = price_move × (lot_size × 100)`; auto-computes on WIN/LOSS from TP/SL |
+| **Analytics** | Win rate, profit factor, BUY vs SELL, lot-size impact, timeframe/strategy rankings, top 5 combos, R:R analysis |
+| **Risk Monitor** | 10 alert types: consecutive losses, revenge trading, overconfidence, overtrading, high risk/trade, drawdown, emotional patterns, poor R:R, missing stop loss, total account risk |
+| **Frontend** | React 18 + Vite — Chat, Trade Form, Analytics Dashboard, Risk Alerts; session + chat history in localStorage |
+| **Data** | SQLite with user-scoped tables, indexes, migrations; SHA-256 salted password hashing |
+
+---
+
+## Architecture
+
+```mermaid
+flowchart LR
+    User[Trader] --> React[React App]
+    React --> Groq[Groq LLM\nFunction Calling]
+    Groq -->|tool decision| MCP[MCP Client]
+    React -->|forms / dashboard| MCP
+    MCP -->|JSON-RPC 2.0 / SSE| Server[FastMCP Server]
+    Server --> DB[(SQLite)]
+```
+
+**Request flow (chat):**
+
+```
+User message → Groq LLM picks tool → MCP Client → FastMCP Server → SQLite
+                     ↑                                              ↓
+              Formatted reply ← LLM formats result ← tool response ←┘
+```
+
+---
+
+## Tech Stack
+
+| Layer | Technologies |
+|-------|--------------|
+| Backend | Python 3.10+, FastMCP, aiosqlite, python-dotenv |
+| Frontend | React 18, Vite 5, groq-sdk |
+| AI | Groq API — `llama-3.1-8b-instant` with tool calling |
+| Database | SQLite (`users`, `trade_tracker`, `trade_results`, `risk_monitor`, `analytics`) |
+| Protocol | JSON-RPC 2.0 over HTTP with Server-Sent Events (SSE) |
+| Deployment | FastMCP Cloud (backend), static host for frontend (Vercel/Netlify) |
+
+---
+
+## Features in Detail
+
+### Conversational Trade Management (`groqClient.js` + `Chatbot.jsx`)
+
+- Natural-language trade entry with step-by-step field collection when details are missing
+- Exact value extraction from user messages (entry, lot, balance, TP, SL, timeframe, style, strategy)
+- After save, prompts for WIN/LOSS and logs result with calculated P/L and updated balance
+- Full conversation history passed to the LLM and persisted per user in `localStorage`
+- Automatic rate-limit retry (up to 3 attempts) with backoff
+
+### Trade Form (`TradeForm.jsx`)
+
+Structured alternative to chat — same `save_trade` MCP tool with fields for entry, TP, SL, lot size, balance, BUY/SELL, currency pair, timeframe, trade style, strategy, and notes.
+
+### Analytics Dashboard (`Dashboard.jsx` + `get_trade_insights`)
+
+Pulls live data from the MCP server and displays:
+
+- Summary: total/open/closed trades, win rate, total P/L
+- Performance: average win, average loss, profit factor
+- Best performing side (BUY vs SELL)
+- Timeframe and strategy breakdowns with win rates and P/L
+- Top 5 timeframe + strategy combinations
+- Risk:reward analysis on winning vs losing trades
+
+Filter via MCP: `currency_pair`, `timeframe`, `strategy`.
+
+### Risk Alerts (`RiskAlerts.jsx` + `check_risk_alerts`)
+
+Analyzes recent and open trades and returns severity-ranked alerts:
+
+1. Consecutive losses  
+2. Revenge trading (new trade within 1 hour of a loss)  
+3. Overconfidence (win streak + increasing lot sizes)  
+4. Overtrading (too many trades per hour)  
+5. High risk per trade (% of balance)  
+6. Drawdown from peak balance  
+7. Emotional trading (high recent loss rate)  
+8. Poor risk:reward (worse than 1:1)  
+9. Missing stop loss  
+10. Total account risk across open positions  
+
+Alerts are stored in `risk_monitor` when the database is writable.
+
+### Authentication (`Login.jsx` + MCP auth tools)
+
+- Register and login through the UI, backed by `register_user` and `verify_user_login` MCP tools
+- Passwords hashed with SHA-256 + random salt
+- Per-user data isolation via `user_id` on every query
+
+---
+
+## MCP Tools Reference
+
+| Tool | Purpose |
+|------|---------|
+| `register_user` | Create account (`username`, `password` min 6 chars) |
+| `verify_user_login` | Authenticate and return `user_id` |
+| `save_trade` | Save trade; computes R:R ratio and potential profit/loss |
+| `log_trade_result` | Close trade as WIN/LOSS; auto-calculates P/L and new balance |
+| `get_trade_insights` | Full analytics with optional filters |
+| `check_risk_alerts` | Pattern-based risk analysis with configurable thresholds |
+
+**Live endpoint:** `https://forex-trade-assistant.fastmcp.app/mcp`
+
+### Quick API Example
 
 ```bash
 curl -X POST https://forex-trade-assistant.fastmcp.app/mcp \
@@ -47,384 +153,165 @@ curl -X POST https://forex-trade-assistant.fastmcp.app/mcp \
   }'
 ```
 
-#### Option 2: From Your Application
+Call a tool:
 
-**JavaScript/TypeScript:**
-```javascript
-const response = await fetch('https://forex-trade-assistant.fastmcp.app/mcp', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json, text/event-stream'
-  },
-  body: JSON.stringify({
-    jsonrpc: '2.0',
-    id: 1,
-    method: 'tools/call',
-    params: {
-      name: 'save_trade',
-      arguments: {
-        user_id: 'your_user_id',
-        entry_price: 2000,
-        lot_size: 0.01,
-        balance: 1000,
-        trade_type: 'BUY',
-        take_profit: 2010,
-        stop_loss: 1990,
-        timeframe: '1h',
-        trade_style: 'scalp',
-        strategy: 'SMC'
-      }
+```bash
+curl -X POST https://forex-trade-assistant.fastmcp.app/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 2,
+    "method": "tools/call",
+    "params": {
+      "name": "get_trade_insights",
+      "arguments": { "user_id": "your_user_id" }
     }
-  })
-});
+  }'
 ```
 
-**Python:**
-```python
-import requests
-
-response = requests.post(
-    'https://forex-trade-assistant.fastmcp.app/mcp',
-    headers={
-        'Content-Type': 'application/json',
-        'Accept': 'application/json, text/event-stream'
-    },
-    json={
-        'jsonrpc': '2.0',
-        'id': 1,
-        'method': 'tools/call',
-        'params': {
-            'name': 'get_trade_insights',
-            'arguments': {
-                'user_id': 'your_user_id'
-            }
-        }
-    }
-)
-```
-
-### Available Tools
-
-1. **`save_trade`**: Save a new trade entry
-   - Required: `user_id`, `entry_price`, `lot_size`, `balance`, `trade_type`
-   - Optional: `take_profit`, `stop_loss`, `timeframe`, `trade_style`, `strategy`, `notes`
-
-2. **`log_trade_result`**: Log trade outcome (WIN/LOSS)
-   - Required: `user_id`, `trade_id`, `result` (WIN or LOSS)
-   - Automatically calculates profit/loss based on saved trade details
-
-3. **`get_trade_insights`**: Get comprehensive trading analytics
-   - Required: `user_id`
-   - Optional filters: `currency_pair`, `timeframe`, `strategy`, `date_filter` (today, this_week, this_month)
-   - Returns: win rate, best timeframes, best strategies, risk:reward analysis, etc.
-
-4. **`check_risk_alerts`**: Check for trading risk patterns
-   - Required: `user_id`
-   - Optional: `recent_trades_count`, `consecutive_loss_threshold`, etc.
-   - Returns: List of risk alerts with recommendations
-
-5. **`register_user`**: Register a new user account
-   - Required: `username`, `password`
-
-6. **`verify_user_login`**: Verify user login credentials
-   - Required: `username`, `password`
-   - Returns: `user_id` and `username` if valid
-
-### Response Format
-
-The server uses **JSON-RPC 2.0** over **Server-Sent Events (SSE)**:
-
-```
-event: message
-data: {"jsonrpc":"2.0","id":1,"result":{"content":[...],"structuredContent":{...}}}
-```
-
-Parse the `data:` line to extract the JSON response.
+Responses use SSE — parse the `data:` line for the JSON payload.
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 forex_trading_assistant/
-├── server/                 # FastMCP backend server
-│   ├── main.py            # Main server file with all tools
-│   └── ...
-├── database/              # Database initialization and schema
-│   ├── init_db.py        # Database connection and initialization
-│   ├── schema.sql        # SQL schema definitions
-│   └── migrate_*.py      # Database migration scripts
-├── client/                # React frontend application
+├── server/
+│   └── main.py                 # FastMCP server — all 6 tools
+├── database/
+│   ├── init_db.py              # Connection + auto-init
+│   ├── schema.sql              # Tables and indexes
+│   └── migrate_*.py            # Schema migrations
+├── client/
 │   ├── src/
-│   │   ├── components/   # React components (Chatbot, Login, etc.)
-│   │   ├── services/     # API clients (mcpClient, groqClient)
-│   │   └── ...
-│   ├── package.json
-│   └── vite.config.js
-└── README.md             # This file
+│   │   ├── components/
+│   │   │   ├── Chatbot.jsx     # AI chat interface
+│   │   │   ├── TradeForm.jsx   # Manual trade entry
+│   │   │   ├── Dashboard.jsx   # Analytics view
+│   │   │   ├── RiskAlerts.jsx  # Risk monitoring UI
+│   │   │   └── Login.jsx       # Auth screen
+│   │   └── services/
+│   │       ├── groqClient.js   # Groq LLM + tool execution
+│   │       └── mcpClient.js    # MCP JSON-RPC / SSE client
+│   └── package.json
+├── requirements.txt
+└── README.md
 ```
 
 ---
 
-## 🛠️ Setup & Installation
+## Setup & Run Locally
 
 ### Prerequisites
 
 - Python 3.10+
 - Node.js 18+
-- SQLite (included with Python)
+- Groq API key ([console.groq.com](https://console.groq.com))
 
-### Backend Setup
+### Backend
 
-1. **Install dependencies:**
 ```bash
-pip install fastmcp aiosqlite python-dotenv
-```
+pip install -r requirements.txt
 
-2. **Set environment variables:**
-```bash
-# .env file
-DATABASE_PATH=/tmp/forex_trading.db  # or local path
-```
+# Optional .env
+# DATABASE_PATH=./forex_trading.db
 
-3. **Run the server locally:**
-```bash
 python server/main.py --local
-# Server runs on http://127.0.0.1:8000/mcp
+# → http://127.0.0.1:8000/mcp
 ```
 
-4. **Deploy to FastMCP Cloud:**
-   - Push code to GitHub
-   - Connect repository to FastMCP Cloud
-   - Server will be available at: `https://forex-trade-assistant.fastmcp.app/mcp`
+### Frontend
 
-### Frontend Setup
-
-1. **Navigate to client directory:**
 ```bash
 cd client
-```
-
-2. **Install dependencies:**
-```bash
 npm install
-```
 
-3. **Set environment variables:**
-```bash
-# client/.env file
-VITE_MCP_SERVER_URL=https://forex-trade-assistant.fastmcp.app/mcp
-VITE_GROQ_API_KEY=your_groq_api_key_here
-```
+# client/.env
+# VITE_MCP_SERVER_URL=http://127.0.0.1:8000/mcp
+# VITE_GROQ_API_KEY=your_groq_api_key
 
-4. **Run development server:**
-```bash
 npm run dev
-# App runs on http://localhost:5173
+# → http://localhost:5173
+```
+
+For production frontend, point `VITE_MCP_SERVER_URL` to the live MCP server:
+
+```
+VITE_MCP_SERVER_URL=https://forex-trade-assistant.fastmcp.app/mcp
 ```
 
 ---
 
-## 🔧 How the Client Works
+## Database Schema
 
-### Architecture
+| Table | Stores |
+|-------|--------|
+| `users` | Accounts with salted password hashes |
+| `trade_tracker` | Trade entries (price, lot, balance, type, timeframe, strategy, R:R, status) |
+| `trade_results` | WIN/LOSS outcomes with calculated P/L |
+| `risk_monitor` | Generated risk alerts |
+| `analytics` | Precomputed metrics (optional) |
 
-1. **React Frontend** (`client/`)
-   - User interface with tabs: Chatbot, Trade Form, Dashboard, Risk Alerts
-   - Login/Registration system
-   - Chat history persistence (localStorage)
-
-2. **MCP Client** (`client/src/services/mcpClient.js`)
-   - Handles HTTP communication with FastMCP server
-   - JSON-RPC 2.0 protocol
-   - Parses SSE responses
-
-3. **Groq LLM Client** (`client/src/services/groqClient.js`)
-   - Integrates Groq LLM for natural language understanding
-   - Tool calling: LLM decides which tools to call based on user messages
-   - Tool execution: Executes MCP tools and formats responses
-
-4. **Flow:**
-   ```
-   User Message → Groq LLM → Tool Call Decision → MCP Client → FastMCP Server → Database
-                                                                    ↓
-   User sees response ← Groq formats result ← Tool Result ←────────┘
-   ```
-
-### Key Features
-
-- **Conversational Interface**: Natural language interaction (e.g., "I take new trade, entry 2000...")
-- **Intelligent Field Collection**: LLM asks for missing trade details systematically
-- **Automatic Calculations**: Profit/loss calculated automatically from trade details
-- **Date/Time Awareness**: LLM can answer questions about trades by date ("how many trades yesterday?")
-- **Full Chat History**: All conversations persisted in localStorage per user
+All trade data is scoped by `user_id`. User IDs are derived from usernames: `"John Doe"` → `john_doe`.
 
 ---
 
-## 📊 Database Schema
+## XAU/USD P/L Reference
 
-- **`users`**: User accounts with password hashing
-- **`trade_tracker`**: All trade entries with timestamps
-- **`trade_results`**: Trade outcomes (WIN/LOSS) with calculated profit/loss
-- **`risk_monitor`**: Risk alerts and patterns
-- **`analytics`**: Precomputed analytics (optional)
+Lot size controls profit per $1 price move:
 
-All tables include `user_id` for data isolation.
+| Lot Size | $ per $1 Move |
+|----------|---------------|
+| 0.01 | $1 |
+| 0.02 | $2 |
+| 0.1 | $10 |
 
----
+**Formula:** `Profit/Loss = (Price Move) × (Lot Size × 100)`
 
-## 🔐 Security
-
-- **Password Hashing**: SHA-256 with salt
-- **User Isolation**: All queries filtered by `user_id`
-- **API Keys**: Stored in environment variables (never committed)
+Example: Entry 2000, TP 2010, Lot 0.03 → `(10) × (0.03 × 100) = $30`
 
 ---
 
-## 🌐 Deployment
+## Deployment
 
-### FastMCP Server (Backend)
+**Backend (FastMCP Cloud):** Push to GitHub, connect repo — live at `https://forex-trade-assistant.fastmcp.app/mcp`
 
-1. Push code to GitHub
-2. Connect to FastMCP Cloud
-3. Server automatically deploys at: `https://forex-trade-assistant.fastmcp.app/mcp`
-
-### React Frontend
-
-Deploy to Vercel, Netlify, or any static hosting:
-
-```bash
-cd client
-npm run build
-# Deploy dist/ folder
-```
-
-Update `VITE_MCP_SERVER_URL` in production environment.
+**Frontend:** `cd client && npm run build` → deploy `dist/` to Vercel, Netlify, or any static host. Set `VITE_MCP_SERVER_URL` and `VITE_GROQ_API_KEY` in the host environment.
 
 ---
 
-## 📝 API Examples
+## Security Notes
 
-### Save a Trade
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "method": "tools/call",
-  "params": {
-    "name": "save_trade",
-    "arguments": {
-      "user_id": "john_doe",
-      "entry_price": 2000,
-      "lot_size": 0.01,
-      "balance": 1000,
-      "trade_type": "BUY",
-      "take_profit": 2010,
-      "stop_loss": 1990,
-      "timeframe": "1h",
-      "trade_style": "scalp",
-      "strategy": "SMC"
-    }
-  }
-}
-```
-
-### Get Trade Insights
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 2,
-  "method": "tools/call",
-  "params": {
-    "name": "get_trade_insights",
-    "arguments": {
-      "user_id": "john_doe",
-      "date_filter": "today"
-    }
-  }
-}
-```
-
-### Check Risk Alerts
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 3,
-  "method": "tools/call",
-  "params": {
-    "name": "check_risk_alerts",
-    "arguments": {
-      "user_id": "john_doe",
-      "recent_trades_count": 10
-    }
-  }
-}
-```
+- Passwords: SHA-256 with per-user salt (see `server/main.py`)
+- API keys: environment variables only — never commit `.env`
+- Groq key runs in browser (`dangerouslyAllowBrowser: true`); use a backend proxy in production to protect the key
+- All MCP queries filter by authenticated `user_id`
 
 ---
 
-## 🤝 Contributing
+## Troubleshooting
 
-This is a personal project, but feel free to fork and adapt for your own use.
-
----
-
-## 📄 License
-
-This project is for personal/educational use.
-
----
-
-## 🔗 Links
-
-- **FastMCP Server**: https://forex-trade-assistant.fastmcp.app/mcp
-- **FastMCP Documentation**: https://gofastmcp.com
-- **Groq API**: https://console.groq.com
+| Issue | Fix |
+|-------|-----|
+| MCP server not responding | Verify URL; ensure `Accept: application/json, text/event-stream` header |
+| CORS / network errors | Check `VITE_MCP_SERVER_URL` matches running server |
+| Groq errors | Confirm `VITE_GROQ_API_KEY`; watch for rate limits (client auto-retries) |
+| Database errors | Ensure `DATABASE_PATH` is writable; run migrations if schema changed |
+| Login fails | Username is case-insensitive; password min 6 characters |
 
 ---
 
-## 💡 Tips for Using the Server
+## Links
 
-1. **User ID Format**: User IDs are generated from usernames (lowercase, spaces → underscores)
-   - Username: "John Doe" → user_id: "john_doe"
-
-2. **Date Filters**: Use `date_filter: "today"`, `"this_week"`, or `"this_month"` in `get_trade_insights`
-
-3. **Lot Size Calculation**: For XAU/USD, lot size determines profit per $1 move
-   - 0.01 lot = $1 per $1 move
-   - 0.1 lot = $10 per $1 move
-   - Formula: `Profit = (Price Move) × (Lot Size × 100)`
-
-4. **Error Handling**: Always check for `error` field in responses
-
-5. **Rate Limiting**: Be mindful of API rate limits when making multiple requests
+- **Full Demo:** [https://tinyurl.com/ai-powered-forex-assistant](https://tinyurl.com/ai-powered-forex-assistant)
+- **Live MCP Server:** [https://forex-trade-assistant.fastmcp.app/mcp](https://forex-trade-assistant.fastmcp.app/mcp)
+- **FastMCP Docs:** [https://gofastmcp.com](https://gofastmcp.com)
+- **Groq Console:** [https://console.groq.com](https://console.groq.com)
 
 ---
 
-## 🐛 Troubleshooting
+## License
 
-**Server not responding:**
-- Check if server is running: `curl https://forex-trade-assistant.fastmcp.app/mcp`
-- Verify JSON-RPC format is correct
-- Check `Accept` header includes `text/event-stream`
-
-**Database errors:**
-- Ensure `DATABASE_PATH` is writable
-- Check database file permissions
-- Run migration scripts if needed
-
-**Frontend issues:**
-- Verify `VITE_MCP_SERVER_URL` is set correctly
-- Check browser console for CORS errors
-- Ensure Groq API key is valid
-
----
-
-## 📞 Support
-
-For issues or questions, check the code comments or review the FastMCP documentation.
-
+Personal and educational use.
